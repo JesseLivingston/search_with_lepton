@@ -16,7 +16,7 @@ import traceback
 from typing import Annotated, List, Generator, Optional
 
 from fastapi import HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse, JSONResponse
 import httpx
 from loguru import logger
 
@@ -25,15 +25,17 @@ from leptonai.photon.types import to_bool
 from leptonai.util import tool
 
 # 
-BACKEND_PORT = 9876
+BACKEND_PORT = 8080
 
 OPENAI_URL = "http://localhost:11434/v1"
+# OPENAI_URL = "http://host.docker.internal:11434/v1"
 OPENAI_API_KEY = "123456"
 OPENAI_MODEL = "kuqoi/qwen2-tools" # "llama3:latest"
 
 # api key
 BING_SEARCH_V7_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
-BING_SEARCH_V7_SUBSCRIPTION_KEY = "123456"
+# BING_SEARCH_V7_SUBSCRIPTION_KEY = ""
+
 BING_MKT = "zh-CN"
 DEFAULT_SEARCH_ENGINE_TIMEOUT = 5
 
@@ -47,13 +49,14 @@ DEFAULT_SEARCH_ENGINE_TIMEOUT = 5
 
 
 # If the user did not provide a query, we will use this default query.
-_default_query = "Who said 'live long and prosper'?"
+_default_query_en = "Who said 'live long and prosper'?"
+_default_query = "问苍茫大地， 谁主沉浮？"
 
 # This is really the most important part of the rag model. It gives instructions
 # to the model on how to generate the answer. Of course, different models may
 # behave differently, and we haven't tuned the prompt to make it optimal - this
 # is left to you, application creators, as an open problem.
-_rag_query_text = """
+_rag_query_text_en = """
 You are a large language AI assistant built by Lepton AI. You are given a user question, and please write clean, concise and accurate answer to the question. You will be given a set of related contexts to the question, each starting with a reference number like [[citation:x]], where x is a number. Please use the context and cite the context at the end of each sentence if applicable.
 
 Your answer must be correct, accurate and written by an expert using an unbiased and professional tone. Please limit to 1024 tokens. Do not give any information that is not related to the question, and do not repeat. Say "information is missing on" followed by the related topic, if the given context do not provide sufficient information.
@@ -66,6 +69,18 @@ Here are the set of contexts:
 
 Remember, don't blindly repeat the contexts verbatim. And here is the user question:
 """
+_rag_query_text = """
+你是由 CCDC AI 构建的大型语言 AI 助手。你将收到一个用户问题，请写出简洁、准确且清晰的答案。你会得到一组与问题相关的上下文，每个上下文都以引用编号开头，例如
+[[citation:x]]，其中x是一个数字。如果适用，请在每句话的末尾引用上下文。
+
+你的回答必须是正确、准确且由专家使用公正和专业的语气撰写的。请限制在1024个token以内。不要提供与问题无关的信息，也不要重复。如果给定的上下文没有提供足够的信息，请说“关于相关主题的信息缺失”，然后是相关主题。
+
+请使用引用编号格式引用上下文，格式为[citation:x]。如果一句话来自多个上下文，请列出所有适用的引用，例如[citation:3][citation:5]。除了代码和特定名称及引用外，你的回答必须使用与问题相同的语言。
+
+以下是上下文集合：
+{context}
+
+记住，不要盲目地逐字重复上下文。以下是用户问题："""
 
 # A set of stop words to use - this is not a complete set, and you may want to
 # add more given your observation.
@@ -88,7 +103,7 @@ stop_words = [
 # consecutive requests to the model: one for the answer, and one for the related
 # questions. This is not ideal, but it is a good tradeoff between response time
 # and quality.
-_more_questions_prompt = """
+_more_questions_prompt_en = """
 You are a helpful assistant that helps the user to ask related questions, based on user's original question and the related contexts. Please identify worthwhile topics that can be follow-ups, and write questions no longer than 20 words each. Please make sure that specifics, like events, names, locations, are included in follow up questions so they can be asked standalone. For example, if the original question asks about "the Manhattan project", in the follow up question, do not just say "the project", but use the full name "the Manhattan project". Your related questions must be in the same language as the original question.
 
 Here are the contexts of the question:
@@ -97,8 +112,14 @@ Here are the contexts of the question:
 
 Remember, based on the original question and related contexts, suggest three such further questions. Do NOT repeat the original question. Each related question should be no longer than 20 words. Here is the original question:
 """
+_more_questions_prompt = """
+你是一个有帮助的助手，根据用户的原始问题和相关上下文，帮助用户提出相关问题。请识别出值得进一步探讨的话题，并写出每个不超过20个字的问题。请确保在后续问题中包含具体内容，如事件、名称、地点等，以便它们可以独立提出。例如，如果原始问题询问“曼哈顿计划”，在后续问题中不要只说“该项目”，而要使用全名“曼哈顿计划”。你的相关问题必须与原始问题使用相同的语言。
 
+以下是问题的上下文：
+{context}
 
+记住，根据原始问题和相关上下文，建议三个这样的进一步问题。不要重复原始问题。每个相关问题不应超过20个字。以下是原始问题：
+"""
 
 def search_with_bing(query: str, subscription_key: str):
     """
@@ -387,7 +408,7 @@ class RAG(Photon):
         except AttributeError:
             thread_local.client = openai.OpenAI(
                 # base_url=f"https://{self.model}.lepton.run/api/v1/",
-                base_url=OPENAI_URL, # os.environ.get("OPENAI_URL"),
+                base_url=os.environ.get("OPENAI_URL", OPENAI_URL),
                 api_key=OPENAI_API_KEY, # os.environ.get("OPENAI_API_KEY")
                 # or WorkspaceInfoLocalRecord.get_current_workspace_token(),
                 # We will set the connect timeout to be 10 seconds, and read/write
@@ -413,7 +434,8 @@ class RAG(Photon):
                 timeout=httpx.Timeout(connect=10, read=120, write=120, pool=10),
             )
         elif self.backend == "BING":
-            self.search_api_key = BING_SEARCH_V7_SUBSCRIPTION_KEY # os.environ["BING_SEARCH_V7_SUBSCRIPTION_KEY"]
+            # self.search_api_key = BING_SEARCH_V7_SUBSCRIPTION_KEY
+            self.search_api_key = os.environ.get("BING_SEARCH_V7_SUBSCRIPTION_KEY", BING_SEARCH_V7_SUBSCRIPTION_KEY)
             self.search_function = lambda query: search_with_bing(
                 query,
                 self.search_api_key,
@@ -558,6 +580,14 @@ class RAG(Photon):
         # Second, upload to KV. Note that if uploading to KV fails, we will silently
         # ignore it, because we don't want to affect the user experience.
         # _ = self.executor.submit(self.kv.put, search_uuid, "".join(all_yielded_results))
+    
+    @Photon.handler(method="POST", path="/bing/query")
+    def query_bing(self, query: str) -> JSONResponse:
+        """
+        query bing
+        """
+        contexts = self.search_function(query)
+        return JSONResponse(content=contexts)
 
     @Photon.handler(method="POST", path="/query")
     # @staticmethod
@@ -658,7 +688,7 @@ class RAG(Photon):
     @Photon.handler(mount=True)
     # @app.get("/ui")
     def ui(self):
-        return StaticFiles(directory="ui")
+        return StaticFiles(directory="ui", html=True)
 
     @Photon.handler(method="GET", path="/")
     # @staticmethod
@@ -672,7 +702,7 @@ class RAG(Photon):
 
 if __name__ == "__main__":
     rag = RAG()
-    rag.launch(port=BACKEND_PORT)
+    rag.launch(port=BACKEND_PORT, log_level="debug")
 # 启动应用
 # if __name__ == "__main__":
 #     import uvicorn

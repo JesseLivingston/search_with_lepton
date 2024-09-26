@@ -26,6 +26,8 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+*.tar
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -121,7 +123,8 @@ celerybeat.pid
 
 # Environments
 .env
-.venv
+.venv/
+.vscode/
 env/
 venv/
 ENV/
@@ -177,7 +180,6 @@ node_modules/
 
 # production
 /build
-/ui
 
 # misc
 .DS_Store
