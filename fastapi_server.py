@@ -34,7 +34,7 @@ OPENAI_MODEL = "kuqoi/qwen2-tools" # "llama3:latest"
 
 # api key
 BING_SEARCH_V7_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
-# BING_SEARCH_V7_SUBSCRIPTION_KEY = ""
+BING_SEARCH_V7_SUBSCRIPTION_KEY = ""
 
 BING_MKT = "zh-CN"
 DEFAULT_SEARCH_ENGINE_TIMEOUT = 5

@@ -15,10 +15,10 @@ COPY ./web/*.mjs ./web/
 # 构建前端项目
 # RUN npm config set registry https://registry.npmmirror.com
 # RUN npm install -g cnpm --registry=https://registry.npm.taobao.org
-RUN cd web && npm install && npm run build
+# RUN cd web && npm install && npm run build
 
 WORKDIR /app
-# COPY ./ui ./ui
+COPY ./ui ./ui
 
 # 第二阶段， 使用官方的 Python 镜像作为基础镜像来运行后端
 FROM python:3.12.5-slim

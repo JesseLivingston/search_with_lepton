@@ -28,10 +28,10 @@ export const Logo: FC = () => {
         </svg>
       </div>
       <div className="text-center font-medium text-2xl md:text-3xl text-zinc-950 relative text-nowrap">
-        CCDC AI Search
+        CBPC 智能搜索
       </div>
       <div className="transform scale-75 origin-left border items-center rounded-lg bg-gray-100 px-2 py-1 text-xs font-medium text-zinc-600">
-        lambda
+        阿尔法
       </div>
     </div>
   );

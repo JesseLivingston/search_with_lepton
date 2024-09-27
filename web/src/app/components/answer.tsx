@@ -18,7 +18,7 @@ export const Answer: FC<{ markdown: string; sources: Source[] }> = ({
     <Wrapper
       title={
         <>
-          <BookOpenText></BookOpenText> Answer
+          <BookOpenText></BookOpenText> 回答
         </>
       }
       content={
