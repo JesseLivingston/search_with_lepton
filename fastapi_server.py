@@ -27,6 +27,8 @@ from leptonai.util import tool
 # 
 BACKEND_PORT = 8080
 
+DEFAULT_OPEN_SERP_HOST = "http://127.0.0.1:7000"
+
 OPENAI_URL = "http://localhost:11434/v1"
 # OPENAI_URL = "http://host.docker.internal:11434/v1"
 OPENAI_API_KEY = "123456"
@@ -120,6 +122,25 @@ _more_questions_prompt = """
 
 记住，根据原始问题和相关上下文，建议三个这样的进一步问题。不要重复原始问题。每个相关问题不应超过20个字。以下是原始问题：
 """
+
+def search_with_openserp(query: str, provider: str = "baidu"):
+    """
+    Search with openserp (default baidu) and return the contexts.
+    """
+    params = {"language": "zh-CN", "limit": REFERENCE_COUNT, "text": query}
+    response = requests.get(f'{os.environ.get("OPEN_SERP_HOST", DEFAULT_OPEN_SERP_HOST)}/{provider}/search', 
+                            params=params)
+    if not response.ok:
+        logger.error(f"{response.status_code} {response.text}")
+        raise HTTPException(response.status_code, "OpenSerp engine error.")
+    json_content = response.json()
+    try:
+        contexts = [{"name": i["title"], "url": i["url"], "snippet": i["description"]} for i in json_content]
+    except KeyError:
+        logger.error(f"Error encountered: {json_content}")
+        return []
+    return contexts
+
 
 def search_with_bing(query: str, subscription_key: str):
     """
@@ -424,7 +445,7 @@ class RAG(Photon):
         """
         # First, log in to the workspace.
         # leptonai.api.workspace.login()
-        self.backend = "BING" # os.environ["BACKEND"].upper()
+        self.backend = "OPEN_SERP" # os.environ["BACKEND"].upper()
         if self.backend == "LEPTON":
             self.leptonsearch_client = Client(
                 "https://search-api.lepton.run/",
@@ -458,6 +479,12 @@ class RAG(Photon):
             self.search_function = lambda query: search_with_searchapi(
                 query,
                 self.search_api_key,
+            )
+        elif self.backend == "OPEN_SERP":
+            self.open_serp_provider = os.environ.get("OPEN_SERP_PROVIDER", "baidu")
+            self.search_function = lambda query: search_with_openserp(
+                query, 
+                self.open_serp_provider
             )
         else:
             raise RuntimeError("Backend must be LEPTON, BING, GOOGLE, SERPER or SEARCHAPI.")
